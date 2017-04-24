@@ -135,7 +135,7 @@ int sfs_getattr(const char *path, struct stat *statbuf)
     if((path_length == 1) == path[0] =='/'){
         statbuf->st_mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO;
         statbuf->st_uid = 0;
-        statbuf->st_gid = 0;
+        statbuf->st_gid = 0; 
         statbuf->st_nlink = 1;
         statbuf->st_ino = 0
 
