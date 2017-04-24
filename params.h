@@ -95,3 +95,4 @@ typedef struct sfs_state {
 #define SFS_DATA ((struct sfs_state *) fuse_get_context()->private_data)
 
 #endif
+ 
