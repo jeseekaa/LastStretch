@@ -41,8 +41,8 @@
 
 
 // Global Variable declaraction
-superblock * root; //root directory pointer
 inode * ino_list; //an array where the size will be initialized in sfs_init()
+superblock * sb_root; //root directory pointer
 
 /**
  * Initialize filesystem
@@ -57,7 +57,7 @@ inode * ino_list; //an array where the size will be initialized in sfs_init()
 
 void *sfs_init(struct fuse_conn_info *conn)
 {
-    //printf("in sfs_init\n");
+    printf("in sfs_init\n");
 
     fprintf(stderr, "in bb-init\n");
     log_msg("\nsfs_init()\n");
@@ -71,6 +71,7 @@ void *sfs_init(struct fuse_conn_info *conn)
     disk_open((SFS_DATA)->diskfile); //from block.h
 
     //initializing the inode struct
+    ino_list = malloc(500 * sizeof(struct inode));
     ino_list[0].data = NULL;
 
     int uid = getuid();
@@ -80,14 +81,15 @@ void *sfs_init(struct fuse_conn_info *conn)
     ino_list[0].ino_gid = gid;
 
     //initializing superblock
-    sb_root = (superblock *)malloc(sizeof(inode));
+    sb_root = (superblock *)malloc(sizeof(struct superblock));
     sb_root->next = NULL;
     sb_root->offset =0;
-    strcpy(sb_root->nsame, "/root");
+    sb_root->ino_index =0;
+    strcpy(sb_root->file_name, "/root");
 
     const char* path = state->pid_path;
 
-    //printf("sfs_init complete\n");
+    printf("sfs_init complete\n");
 
     return state;
 }
@@ -109,7 +111,7 @@ void sfs_destroy(void *userdata)
     printf("freeing inode list and superblock\n");
 
     free(ino_list);
-    free(sb_root)；
+    free(sb_root);
 
     printf("freed\n");
 }
@@ -132,12 +134,12 @@ int sfs_getattr(const char *path, struct stat *statbuf)
     printf("%s: %s\n", __FUNCTION__, path);
 
     //if path is at the root, set statbuf o/w update statbuf
-    if((path_length == 1) == path[0] =='/'){
+    if((path_length == 1) && (path[0] =='/')){
         statbuf->st_mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO;
         statbuf->st_uid = 0;
-        statbuf->st_gid = 0; 
+        statbuf->st_gid = 0;
         statbuf->st_nlink = 1;
-        statbuf->st_ino = 0
+        statbuf->st_ino = 0;
 
     }else{
      int i = 0;
@@ -217,6 +219,7 @@ int sfs_open(const char *path, struct fuse_file_info *fi)
 	    path, fi);
 
     int fd;
+
     fd=open(path, fi->flags);
     if(fd==-1){
 
@@ -273,12 +276,12 @@ int sfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
 	    path, buf, size, offset, fi);
 
     //read the bytes
-    int current_block = root->ino_index;
-    int n_btyes_read = 0;
-    int block_offset = offset%BLOCK_SIZE;
+    int current_block = sb_root->ino_index;
+    int n_bytes_read = 0;
+    int block_offset = offset % BLOCK_SIZE;
     int total = 0;
 
-    //read byte by byte 
+    //read bytes
     while(n_bytes_read < size){
 
     //get the starting point of the file
@@ -298,10 +301,9 @@ int sfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
       buf += n_to_read;
 
     //reset offset
-      block_offset=0；
+      block_offset = 0;
 
     //update the block?
-
 
     //update the total number of bytes 
       n_bytes_read += n_to_read;
@@ -309,8 +311,10 @@ int sfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
     } //end of while loop
 
     log_msg("sfs_read done\n");
+    printf("sfs_read done\n");
 
     retstat = n_bytes_read;
+
     return retstat;
 }
 
@@ -331,8 +335,8 @@ int sfs_write(const char *path, const char *buf, size_t size, off_t offset,
 	    path, buf, size, offset, fi);
 
     //setup
-    int n_traverses = (offset/BLOCK_SIZE);
-    int current_block=root->ino_index;
+    int n_traverses = (offset / BLOCK_SIZE);
+    int current_block = sb_root -> ino_index;
     
     int old_block = -1;
 
@@ -345,7 +349,7 @@ int sfs_write(const char *path, const char *buf, size_t size, off_t offset,
     int total_bytes_written =0;
     int block_offset = offset % BLOCK_SIZE;
 
-    while(total_bytes_written <size){
+    while(total_bytes_written < size){
 
     //get the starting point in file
       int start_index = BLOCK_SIZE * (1 + current_block) + block_offset;
@@ -368,6 +372,7 @@ int sfs_write(const char *path, const char *buf, size_t size, off_t offset,
 
     } //end of while loop
 
+    printf("sfs_write done\n");
     retstat = total_bytes_written;
     
     return retstat;

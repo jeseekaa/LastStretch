@@ -1,4 +1,10 @@
 /*
+  Jessica Guo (jg900) 
+  Shrey Desai (sjd166)
+  Douglas Judice (dij9)
+
+  Assignment03 due May 1, 2017
+
   Copyright (C) 2012 Joseph J. Pfeiffer, Jr., Ph.D. <pfeiffer@cs.nmsu.edu>
 
   This program can be distributed under the terms of the GNU GPLv3.
@@ -45,7 +51,6 @@ typedef struct superblock{
 	unsigned long sb_blocksize; //in bytes
 	
 	int ino_index; //index of inode in list
-
 	int length; 
 	int offset; //offset from root
 	char file_name[500]; //limit filename to 500 characters 
@@ -65,7 +70,7 @@ typedef struct inode{
 
 } inode;
 
-typedef struct ino_bitmap{
+/*typedef struct ino_bitmap{
 	int bitmap[1024];
 } ino_bitmap;
 
@@ -75,13 +80,15 @@ typedef struct data_bitmap{
 
 typedef struct ino_table{
 	int ino_table[1024];
-}ino_table;
+}ino_table;*/
 
 //first level of pointers
-typedef struct indirect_pointer{
+/*typedef struct indirect_pointer{
+
 	superblock * index_pointer;
 	struct indrect_pointer * next;
-} indirect_pointer;
+
+} indirect_pointer;*/
 
 //simple filesystem state
 typedef struct sfs_state {
@@ -95,4 +102,3 @@ typedef struct sfs_state {
 #define SFS_DATA ((struct sfs_state *) fuse_get_context()->private_data)
 
 #endif
- 
