@@ -446,6 +446,31 @@ int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 	       struct fuse_file_info *fi)
 {
     int retstat = 0;
+    log_msg("sfs_readdir()\n")
+    DIR *dir = (DIR *) fi->fh;
+    struct dirent * entry;
+
+    errno =0;
+
+    while(entry = readdir(dir)){
+
+      struct stat stat;
+
+      memset(&stat, 0, sizeof(stat));
+
+      stat.st_ino = entry -> d_ino;
+      stat.st_mode = entry -> d_type << 12;
+
+      if(filler(buf, entry->d_name, &stat, 0)){
+        log_msg("buffer full\n");
+        retstat = -ENOMEM;
+
+      }
+    } //end of while loop
+
+    if(entry == NULL && errno != 0){
+      retstat = -errno;
+    }
     
     
     return retstat;
