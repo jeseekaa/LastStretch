@@ -91,14 +91,6 @@ typedef struct ino_table{
 inode * ino_list;
 superblock * sb_root;
 
-// helper funtion to obtain the full path of a file
-static void sfs_fullpath(char fpath[PATH_MAX], const char * path){
-  strcpy(fpath, SFS_DATA->diskfile);
-  strncat(fpath, path, PATH_MAX);
-
-  log_msg("sfs_fullpath: root directory: \"%s\", path = \"%s\", fpath =\"%s\" \n", SFS_DATA->diskfile, path, fpath);
-}
-
 
 /**
  * Initialize filesystem
@@ -142,6 +134,7 @@ void *sfs_init(struct fuse_conn_info *conn)
     strcpy(sb_root->file_name, "/root");
 
     const char* path = state->pid_path;*/
+
 
 
     log_msg("sfs_init() done\n");
@@ -194,16 +187,16 @@ int sfs_getattr(const char *path, struct stat *statbuf)
     statbuf->st_mtime = time(NULL); //last modification time
 
     if(strcmp(path, "/")==0){
-      statbuf->st_mode = S_IFDIR | 0755; // set the mode of the file
+      statbuf->st_mode = S_IFDIR | 0755; // set the mode of the file, directory
       statbuf->st_nlink =2; //set the hardlink of the file
 
     }else{
-      statbuf->st_mode = S_IFREG | 0644;
+      statbuf->st_mode = S_IFREG | 0644; // regular file
       statbuf->st_nlink =1;
       statbuf->st_size = 1024;
     }
-    retstat = lstat(fpath, statbuf);
-
+   // retstat = lstat(fpath, statbuf);
+    log_msg("attributes aquired\n");
   
     
     return retstat;
@@ -369,6 +362,24 @@ int sfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
 
     retstat = n_bytes_read;*/
 
+    if(fi->fh){
+      retstat=pread(fi->fh, buf, size-retstat, offset+retstat);
+      if(retstat<0){
+        retstat= -errno;
+      }else{
+        while(retstat<size){
+          int curr = pread(fi->fh, buf, size-retstat, offset+retstat);
+          if(curr<= 0){
+            if(curr<0){
+              retstat = -errno;
+            }
+            break;
+          }
+          retstat += curr;
+        }
+      }
+    }
+
 
    
     return retstat;
@@ -430,6 +441,25 @@ int sfs_write(const char *path, const char *buf, size_t size, off_t offset,
 
     printf("sfs_write done\n");
     retstat = total_bytes_written;*/
+
+    if(fi->fh){
+      retstat = pwrite(fi->fh, buf, size, offset);
+      if(retstat<0){
+        retstat = -errno;
+      }
+    }else{
+      while(retstat<size){
+      int curr = pwrite(fi->fh, buf, size, offset+retstat);
+      if(curr <= 0){
+        if (curr<0){
+          retstat = -errno;
+        }
+        break;
+      }
+      retstat +=curr;
+    }
+  }
+
     
     return retstat;
 }
@@ -515,6 +545,12 @@ int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
     dir = (DIR *) fi->fh;
     errno =0;
 
+    if(strcmp(path, "/")==0){
+      log_msg("nothing in this directory\n");
+      //call create?
+      return retstat;
+    }
+
     while(entry = readdir(dir)){
 
       struct stat stat;
@@ -534,7 +570,6 @@ int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
     if(entry == NULL && errno != 0){
       retstat = -errno;
     }
-    
     
     return retstat;
 }
