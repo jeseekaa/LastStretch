@@ -1,10 +1,4 @@
 /*
-  Jessica Guo (jg900) 
-  Shrey Desai (sjd166)
-  Douglas Judice (dij9)
-
-  Assignment03 due May 1, 2017
-
   Simple File System
 
   This code is derived from function prototypes found /usr/include/fuse/fuse.h
@@ -28,7 +22,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 
 #ifdef HAVE_SYS_XATTR_H
 #include <sys/xattr.h>
@@ -36,13 +29,76 @@
 
 #include "log.h"
 
+//Additional Structs for this project:
+
+// superblock
+typedef struct superblock{
+
+  struct superblock * next; //to traverse through directories
+  int total_ino; 
+  int total_data_entries; //total number of data entries
+  
+  unsigned long sb_blocksize; //in bytes
+  
+  int ino_index; //index of inode in list
+  int length; 
+  int offset; //offset from root
+  char file_name[500]; //limit filename to 500 characters 
+
+} superblock;
+
+// our i-node struct is based on the actual thing is found in <linux/fs.h>
+typedef struct inode{
+
+  char * data; // the data the inode holds
+  char type; //the type of data
+  unsigned int ino_id; //i-node number
+  uid_t ino_uid; //user_id of owner process
+  gid_t ino_gid; //group_id of owner process
+  int ino_size; //filesize in bloks
+  unsigned long ino_filesize_block; //file size in blocks
+  superblock *ino_sb; //superblock associated
+
+} inode;
+
+/*typedef struct ino_bitmap{
+  int bitmap[1024];
+} ino_bitmap;
+
+typedef struct data_bitmap{
+  int bitmap[1024];
+} data_bitmap;
+
+typedef struct ino_table{
+  int ino_table[1024];
+}ino_table;*/
+
+//first level of pointers
+/*typedef struct indirect_pointer{
+
+  superblock * index_pointer;
+  struct indrect_pointer * next;
+
+} indirect_pointer;*/
+
+
+///////////////////////////////////////////////////////////
+//
 // Prototypes for all these functions, and the C-style comments,
 // come indirectly from /usr/include/fuse.h
+//
 
+inode * ino_list;
+superblock * sb_root;
 
-// Global Variable declaraction
-inode * ino_list; //an array where the size will be initialized in sfs_init()
-superblock * sb_root; //root directory pointer
+// helper funtion to obtain the full path of a file
+static void sfs_fullpath(char fpath[PATH_MAX], const char * path){
+  strcpy(fpath, SFS_DATA->diskfile);
+  strncat(fpath, path, PATH_MAX);
+
+  log_msg("sfs_fullpath: root directory: \"%s\", path = \"%s\", fpath =\"%s\" \n", SFS_DATA->diskfile, path, fpath);
+}
+
 
 /**
  * Initialize filesystem
@@ -54,21 +110,19 @@ superblock * sb_root; //root directory pointer
  * Introduced in version 2.3
  * Changed in version 2.6
  */
-
 void *sfs_init(struct fuse_conn_info *conn)
 {
-    printf("in sfs_init\n");
-
     fprintf(stderr, "in bb-init\n");
     log_msg("\nsfs_init()\n");
+
     
     log_conn(conn);
     log_fuse_context(fuse_get_context());
-
-    sfs_state * state = SFS_DATA;
+    /*sfs_state * state = SFS_DATA;
     state->pid = getpid();
 
     disk_open((SFS_DATA)->diskfile); //from block.h
+    //I CANT EVEN OPEN A DISK WITHOUT IT BREAKING WHY
 
     //initializing the inode struct
     ino_list = malloc(500 * sizeof(struct inode));
@@ -87,11 +141,14 @@ void *sfs_init(struct fuse_conn_info *conn)
     sb_root->ino_index =0;
     strcpy(sb_root->file_name, "/root");
 
-    const char* path = state->pid_path;
+    const char* path = state->pid_path;*/
 
-    printf("sfs_init complete\n");
 
-    return state;
+    log_msg("sfs_init() done\n");
+
+
+
+    return SFS_DATA;
 }
 
 /**
@@ -104,16 +161,13 @@ void *sfs_init(struct fuse_conn_info *conn)
 void sfs_destroy(void *userdata)
 {
     log_msg("\nsfs_destroy(userdata=0x%08x)\n", userdata);
-
-    printf("closing disk\n");
     disk_close();
-
-    printf("freeing inode list and superblock\n");
 
     free(ino_list);
     free(sb_root);
 
-    printf("freed\n");
+    log_msg("destroy complete\n");
+
 }
 
 /** Get file attributes.
@@ -127,31 +181,30 @@ int sfs_getattr(const char *path, struct stat *statbuf)
     int retstat = 0;
     char fpath[PATH_MAX];
     
+
     log_msg("\nsfs_getattr(path=\"%s\", statbuf=0x%08x)\n",
 	  path, statbuf);
 
-    int path_length = strlen(path);
-    printf("%s: %s\n", __FUNCTION__, path);
+    //sfs_fullpath(fpath, path);
 
-    //if path is at the root, set statbuf o/w update statbuf
-    if((path_length == 1) && (path[0] =='/')){
-        statbuf->st_mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO;
-        statbuf->st_uid = 0;
-        statbuf->st_gid = 0;
-        statbuf->st_nlink = 1;
-        statbuf->st_ino = 0;
+    statbuf->st_uid = getuid(); //the user ID of the file's owner
+    statbuf->st_gid = getgid(); //the group ID of the file
+
+    statbuf->st_atime = time(NULL); //last access time
+    statbuf->st_mtime = time(NULL); //last modification time
+
+    if(strcmp(path, "/")==0){
+      statbuf->st_mode = S_IFDIR | 0755; // set the mode of the file
+      statbuf->st_nlink =2; //set the hardlink of the file
 
     }else{
-     int i = 0;
-    while(i<PATH_MAX){
-        int size;
-        statbuf->st_mode = (S_IFREG | S_IRWXU | S_IRWXG | S_IRWXO) & ~S_IXUSR & ~S_IXGRP & ~S_IXOTH;
-        statbuf->st_nlink = 1;
-        statbuf->st_uid = 0;
-        statbuf->st_gid = 0;
-        statbuf->st_size = size;
+      statbuf->st_mode = S_IFREG | 0644;
+      statbuf->st_nlink =1;
+      statbuf->st_size = 1024;
     }
-  }//end of else
+    retstat = lstat(fpath, statbuf);
+
+  
     
     return retstat;
 }
@@ -171,14 +224,15 @@ int sfs_getattr(const char *path, struct stat *statbuf)
 int sfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
     int retstat = 0;
-    int fd; //file descriptor
-
-    fd=creat(path, mode); //creat
-    fi->fh = fd;
-
     log_msg("\nsfs_create(path=\"%s\", mode=0%03o, fi=0x%08x)\n",
 	    path, mode, fi);
+
+    int fd; //file descriptor
+
+    fd=creat(path,mode);
+    fi->fh = fd;
     
+    log_msg("sfs_create done\n");
     
     return retstat;
 }
@@ -190,13 +244,11 @@ int sfs_unlink(const char *path)
     log_msg("sfs_unlink(path=\"%s\")\n", path);
 
     retstat = unlink(path);
-
-    if(retstat != -1 || retstat <0){
-      printf("error in unlinking\n");
-
-      log_msg("Error in sfs_unlink: ", errno);
+    if (retstat<0){
+      retstat = -errno;
     }
 
+    log_msg("sfs_unlink done\n");
     
     return retstat;
 }
@@ -214,20 +266,15 @@ int sfs_unlink(const char *path)
 int sfs_open(const char *path, struct fuse_file_info *fi)
 {
     int retstat = 0;
-
     log_msg("\nsfs_open(path\"%s\", fi=0x%08x)\n",
 	    path, fi);
 
-    int fd;
+    int fd; //file descriptor
 
-    fd=open(path, fi->flags);
-    if(fd==-1){
-
-      return -1;
+    fd = open (path, fi->flags);
+    if(fd == -1){
+      return -errno;
     }
-
-    //save file handle with fule_file_info_struct
-    fi->fh =fd;
 
     
     return retstat;
@@ -252,9 +299,16 @@ int sfs_release(const char *path, struct fuse_file_info *fi)
     int retstat = 0;
     log_msg("\nsfs_release(path=\"%s\", fi=0x%08x)\n",
 	  path, fi);
-    
-    close(fi->fh);
 
+    retstat= close(fi->fh);
+
+    if(retstat<0){
+      retstat = -errno;
+    }
+
+    log_msg("released\n");
+
+    
     return retstat;
 }
 
@@ -274,7 +328,7 @@ int sfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
     int retstat = 0;
     log_msg("\nsfs_read(path=\"%s\", buf=0x%08x, size=%d, offset=%lld, fi=0x%08x)\n",
 	    path, buf, size, offset, fi);
-
+/*
     //read the bytes
     int current_block = sb_root->ino_index;
     int n_bytes_read = 0;
@@ -313,8 +367,10 @@ int sfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
     log_msg("sfs_read done\n");
     printf("sfs_read done\n");
 
-    retstat = n_bytes_read;
+    retstat = n_bytes_read;*/
 
+
+   
     return retstat;
 }
 
@@ -326,14 +382,14 @@ int sfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
  *
  * Changed in version 2.2
  */
-
 int sfs_write(const char *path, const char *buf, size_t size, off_t offset,
-	     struct fuse_file_info *fi){
-    
+	     struct fuse_file_info *fi)
+{
     int retstat = 0;
     log_msg("\nsfs_write(path=\"%s\", buf=0x%08x, size=%d, offset=%lld, fi=0x%08x)\n",
 	    path, buf, size, offset, fi);
 
+    /*
     //setup
     int n_traverses = (offset / BLOCK_SIZE);
     int current_block = sb_root -> ino_index;
@@ -373,12 +429,11 @@ int sfs_write(const char *path, const char *buf, size_t size, off_t offset,
     } //end of while loop
 
     printf("sfs_write done\n");
-    retstat = total_bytes_written;
+    retstat = total_bytes_written;*/
     
     return retstat;
 }
 
-/*********************************************************************************************/
 
 /** Create a directory */
 int sfs_mkdir(const char *path, mode_t mode)
@@ -446,10 +501,18 @@ int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 	       struct fuse_file_info *fi)
 {
     int retstat = 0;
-    log_msg("sfs_readdir()\n")
-    DIR *dir = (DIR *) fi->fh;
-    struct dirent * entry;
 
+    log_msg("readdir%s\n", path);
+
+    //log_msg("Getting the list of files of %s \n", path);
+
+    //filler(buf, ".", NULL, 0);
+   // filler(buf, "..", NULL, 0);
+
+    DIR *dir;
+    struct dirent *entry;
+
+    dir = (DIR *) fi->fh;
     errno =0;
 
     while(entry = readdir(dir)){
